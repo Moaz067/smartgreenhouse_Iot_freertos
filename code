@@ -1,0 +1,346 @@
+#include <Arduino.h>
+#include <DHT.h>
+#include <ESP32Servo.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+#include <time.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+//CONFIGURATION
+#define WIFI_SSID       "Giza-NTI"
+#define WIFI_PASSWORD   "NT!##22N7"
+
+#define MQTT_BROKER     "d591b10af9b04d2186081d873db47d67.s1.eu.hivemq.cloud"
+#define MQTT_PORT       8883
+
+#define MQTT_USERNAME   "Day2_IOT"
+#define MQTT_PASSWORD   "12345678"
+#define STUDENT_NAME    "moaz"
+
+#define TLS_SKIP_VERIFY_FOR_DEBUG 0
+
+const int DHT_PIN = 4;
+const int DHT_TYPE = DHT11;
+const int LDR_PIN = 34;
+const int SERVO_PIN = 13;
+const int RELAY_PIN = 26;
+const int LED_PIN = 2;
+
+const int SCREEN_WIDTH = 128;
+const int SCREEN_HEIGHT = 64;
+const int OLED_RESET = -1;
+const int I2C_ADDRESS = 0x3C;
+
+static const char ROOT_CA[] PROGMEM = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
+TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
+cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4
+WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu
+ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY
+MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54rVygc
+h77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+
+0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6U
+A5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sW
+T8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyH
+B5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+UC
+B5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf1b0SHzUv
+KBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWn
+OlFuhjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTn
+jh8BCNAw1FtxNrQHusEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbw
+qHyGO0aoSCqI3Haadr8faqU9GY/rOPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CI
+rU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV
+HRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY9umbbjANBgkq
+hkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
+ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ
+3BebYhtF8GaV0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KK
+NFtY2PwByVS5uCbMiogziUwthDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5
+ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJwTdwJx4nLCgdNbOhdjsnvzqvHu7Ur
+TkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nxe5AW0wdeRlN8NwdC
+jNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZAJzVc
+oyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq
+4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA
+mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d
+emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
+-----END CERTIFICATE-----
+)EOF";
+
+//Variables
+WiFiClientSecure secureClient;
+PubSubClient mqttClient(secureClient);
+
+DHT dht(DHT_PIN, DHT_TYPE);
+Servo waterServo;
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+String clientId;
+String topicData;
+String topicStatus;
+String topicLed;
+
+float currentTemp = 0.0;
+float currentHumidity = 0.0;
+int currentLight = 0;
+int servoAngle = 0;
+bool relayState = false;
+bool manualMode = false;
+
+const char* mqttStateText(int s) {
+    switch (s) {
+        case -4: return "TIMEOUT";
+        case -3: return "CONNECTION LOST";
+        case -2: return "CONNECT FAILED (TCP/TLS)";
+        case -1: return "DISCONNECTED";
+        case  1: return "BAD PROTOCOL";
+        case  2: return "CLIENT ID REJECTED";
+        case  3: return "BROKER UNAVAILABLE";
+        case  4: return "BAD USERNAME / PASSWORD";
+        case  5: return "NOT AUTHORIZED";
+        default: return "?";
+    }
+}
+
+void onMqttMessage(char* topic, byte* payload, unsigned int length) {
+    String msg = "";
+    for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
+    msg.trim();
+    Serial.printf("[MQTT] <<< Received message on [%s] : %s\n", topic, msg.c_str());
+
+    if (String(topic) == topicLed) {
+        if (msg.equalsIgnoreCase("ON"))  { digitalWrite(LED_PIN, HIGH); Serial.println("[LED] Status updated -> ON");  }
+        if (msg.equalsIgnoreCase("OFF")) { digitalWrite(LED_PIN, LOW);  Serial.println("[LED] Status updated -> OFF"); }
+    }
+    
+    if (String(topic) == String("esp32/") + STUDENT_NAME + "/commands/led" || String(topic) == "greenhouse/control") {
+        if (msg.equalsIgnoreCase("MANUAL_ON")) {
+            manualMode = true;
+            Serial.println("[MODE] Switched to MANUAL mode");
+        } else if (msg.equalsIgnoreCase("AUTO")) {
+            manualMode = false;
+            Serial.println("[MODE] Switched to AUTO mode");
+        }
+    }
+}
+
+void connectWiFi() {
+    Serial.printf("[WiFi] Connecting to \"%s\"", WIFI_SSID);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    uint8_t tries = 0;
+    while (WiFi.status() != WL_CONNECTED && tries++ < 40) {
+        delay(500);
+        Serial.print(".");
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("\n[WiFi] Connected successfully! IP=%s  RSSI=%d dBm\n",
+                      WiFi.localIP().toString().c_str(), WiFi.RSSI());
+    } else {
+        Serial.println("\n[WiFi] FAILED — Check Wi-Fi connection.");
+    }
+}
+
+void syncClock() {
+    Serial.print("[TIME] Syncing with NTP");
+    configTime(0, 0, "pool.ntp.org", "time.google.com");
+    time_t now = time(nullptr);
+    uint8_t tries = 0;
+    while (now < 1700000000 && tries++ < 20) {
+        delay(500);
+        Serial.print(".");
+        now = time(nullptr);
+    }
+    Serial.printf("\n[TIME] UTC now: %s", ctime(&now));
+}
+
+bool connectMQTT() {
+    Serial.printf("[MQTT] Connecting to %s:%d as \"%s\" ...\n",
+                  MQTT_BROKER, MQTT_PORT, clientId.c_str());
+
+    bool ok = mqttClient.connect(clientId.c_str(),
+                                 MQTT_USERNAME, MQTT_PASSWORD,
+                                 topicStatus.c_str(), 1, true, "offline");
+    if (ok) {
+        Serial.println("[MQTT] Connected securely (TLS 8883)");
+        mqttClient.publish(topicStatus.c_str(), "online", true);
+        mqttClient.subscribe(topicLed.c_str());
+        mqttClient.subscribe("greenhouse/control");
+        Serial.printf("[MQTT] Subscribed to topics: %s & greenhouse/control\n", topicLed.c_str());
+        return true;
+    }
+
+    int st = mqttClient.state();
+    Serial.printf("[MQTT] Failed, state=%d → %s\n", st, mqttStateText(st));
+    char err[128];
+    if (secureClient.lastError(err, sizeof(err)) != 0) {
+        Serial.printf("[TLS]  Last TLS error: %s\n", err);
+    }
+    return false;
+}
+
+//FreeRTOS Tasks
+void TaskReadSensors(void *pvParameters) {
+    (void) pvParameters;
+    while (1) {
+        currentTemp = dht.readTemperature();
+        currentHumidity = dht.readHumidity();
+        currentLight = analogRead(LDR_PIN);
+
+        Serial.println("----------------------------------------");
+        Serial.println("[SENSOR UPDATE]");
+        Serial.printf("  Temperature : %.2f °C\n", currentTemp);
+        Serial.printf("  Humidity    : %.2f %%\n", currentHumidity);
+        Serial.printf("  Light Level : %d\n", currentLight);
+        Serial.println("----------------------------------------");
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+
+void TaskControlActuators(void *pvParameters) {
+    (void) pvParameters;
+    while (1) {
+        if (!manualMode) {
+            if (currentTemp > 30.0) {
+                servoAngle = 90;
+            } else {
+                servoAngle = 0;
+            }
+            waterServo.write(servoAngle);
+
+            if (currentLight < 500) {
+                relayState = true;
+            } else {
+                relayState = false;
+            }
+            digitalWrite(RELAY_PIN, relayState ? HIGH : LOW);
+
+            // Print actuator states to Serial Monitor
+            Serial.printf("[ACTUATORS (AUTO)] Servo Angle: %d° | Relay (Pump/Light): %s\n", 
+                          servoAngle, relayState ? "ON" : "OFF");
+        } else {
+            Serial.printf("[ACTUATORS (MANUAL)] Servo Angle: %d° | Relay: %s\n", 
+                          servoAngle, relayState ? "ON" : "OFF");
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void TaskUpdateDisplay(void *pvParameters) {
+    (void) pvParameters;
+    while (1) {
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(SSD1306_WHITE);
+        
+        display.setCursor(0, 0);
+        display.print("Temp: "); display.print(currentTemp); display.print(" C");
+        
+        display.setCursor(0, 16);
+        display.print("Humidity: "); display.print(currentHumidity); display.print(" %");
+        
+        display.setCursor(0, 32);
+        display.print("Light: "); display.print(currentLight);
+        
+        display.setCursor(0, 48);
+        display.print("Mode: "); display.print(manualMode ? "MANUAL" : "AUTO");
+        
+        display.display();
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void TaskCloudCommunication(void *pvParameters) {
+    (void) pvParameters;
+    while (1) {
+        if (WiFi.status() == WL_CONNECTED) {
+            if (!mqttClient.connected()) {
+                connectMQTT();
+            }
+            mqttClient.loop();
+
+            JsonDocument doc;
+            doc["device_id"]   = clientId;
+            doc["temperature"] = currentTemp;
+            doc["humidity"]    = currentHumidity;
+            doc["light"]       = currentLight;
+            doc["uptime_s"]    = millis() / 1000;
+            doc["rssi"]        = WiFi.RSSI();
+            doc["timestamp"]   = (uint32_t)time(nullptr);
+
+            char payload[256];
+            serializeJson(doc, payload, sizeof(payload));
+            bool ok = mqttClient.publish(topicData.c_str(), payload, false);
+            
+            Serial.printf("[MQTT PUBLISH] >>> Topic: %s\nPayload: %s\nStatus: %s\n", 
+                          topicData.c_str(), payload, ok ? "SUCCESS" : "FAILED");
+        } else {
+            Serial.println("[WiFi] Warning: Disconnected from network. Attempting reconnection...");
+            connectWiFi();
+        }
+        vTaskDelay(pdMS_TO_TICKS(10000));
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+    delay(1000);
+    Serial.println("\n=== ESP32 Greenhouse System Initializing ===");
+
+    pinMode(LDR_PIN, INPUT);
+    pinMode(RELAY_PIN, OUTPUT);
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(RELAY_PIN, LOW);
+    digitalWrite(LED_PIN, LOW);
+
+    if(!display.begin(SSD1306_SWITCHCAPVCC, I2C_ADDRESS)) {
+        Serial.println(F("[OLED] SSD1306 allocation failed!"));
+    } else {
+        Serial.println(F("[OLED] Initialized successfully."));
+    }
+    display.clearDisplay();
+    display.display();
+
+    dht.begin();
+    waterServo.attach(SERVO_PIN);
+    waterServo.write(0);
+
+    clientId    = String("esp32-") + STUDENT_NAME + "-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+    topicData   = String("esp32/") + STUDENT_NAME + "/sensors/data";
+    topicStatus = String("esp32/") + STUDENT_NAME + "/status";
+    topicLed    = String("esp32/") + STUDENT_NAME + "/commands/led";
+
+    connectWiFi();
+    syncClock();
+
+#if TLS_SKIP_VERIFY_FOR_DEBUG
+    Serial.println("[TLS] CERTIFICATE NOT VERIFIED — DEBUG ONLY");
+    secureClient.setInsecure();
+#else
+    secureClient.setCACert(ROOT_CA);
+#endif
+
+    mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+    mqttClient.setCallback(onMqttMessage);
+    mqttClient.setBufferSize(512);
+    mqttClient.setKeepAlive(30);
+    mqttClient.setSocketTimeout(15);
+
+    connectMQTT();
+
+    xTaskCreate(TaskReadSensors, "ReadSensors", 2048, NULL, 1, NULL);
+    xTaskCreate(TaskControlActuators, "ControlActuators", 2048, NULL, 1, NULL);
+    xTaskCreate(TaskUpdateDisplay, "UpdateDisplay", 2048, NULL, 1, NULL);
+    xTaskCreate(TaskCloudCommunication, "CloudComm", 4096, NULL, 2, NULL);
+    
+    Serial.println("=== Setup Completed. FreeRTOS Tasks Running ===");
+}
+
+void loop() {
+    vTaskDelay(pdMS_TO_TICKS(1000));
+}
